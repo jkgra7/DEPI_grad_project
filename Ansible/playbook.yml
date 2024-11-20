@@ -1,0 +1,93 @@
+# playbook.yml
+- hosts: webserver
+  become: yes
+  tasks:
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+
+    - name: Install required packages
+      apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - gnupg-agent
+          - software-properties-common
+        state: present
+
+    - name: Add Docker's official GPG key
+      apt_key:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        state: present
+
+    - name: Add Docker apt repository
+      apt_repository:
+        repo: deb [arch=amd64] https://download.docker.com/linux/ubuntu focal stable
+        state: present
+        filename: docker
+
+    - name: Update apt cache after adding Docker repo
+      apt:
+        update_cache: yes
+
+    - name: Install Docker and Python Docker module
+      apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - python3-docker
+        state: present
+
+    - name: Ensure Docker service is running
+      service:
+        name: docker
+        state: started
+        enabled: true
+
+    - name: Wait for Docker socket to be available
+      wait_for:
+        path: /var/run/docker.sock
+        state: started
+        timeout: 30
+
+    - name: Gather list of all Docker containers
+      command: docker ps -aq
+      register: docker_containers
+      changed_when: false
+
+    - name: Remove all existing Docker containers
+      docker_container:
+        name: "{{ item }}"
+        state: absent
+      loop: "{{ docker_containers.stdout_lines }}"
+      when: docker_containers.stdout != ""
+
+    - name: Gather list of all Docker images
+      command: docker images -q
+      register: docker_images
+      changed_when: false
+
+    - name: Remove all existing Docker images
+      docker_image:
+        name: "{{ item }}"
+        state: absent
+      loop: "{{ docker_images.stdout_lines }}"
+      when: docker_images.stdout != ""
+
+    - name: Pull Docker image
+      docker_image:
+        name: obad20xx/depi
+        tag: depia
+        source: pull
+
+    - name: Run Docker container
+      docker_container:
+        name: depi_app
+        image: obad20xx/depi:depi
+        state: started
+        restart_policy: always
+        published_ports:
+          - "8080:8080"
+          - "8000:8000"
